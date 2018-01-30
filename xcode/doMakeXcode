@@ -1,0 +1,4 @@
+#!/bin/bash
+#/usr/local/bin/cmake -D CMAKE_BUILD_TYPE=Debug ../CMakeLists.txt && /usr/bin/make
+#/usr/local/bin/cmake .. && /usr/bin/make
+/usr/local/bin/cmake -G "Xcode" ..
