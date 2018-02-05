@@ -10,11 +10,11 @@
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "src/main.cpp"
-            timestampString = "539047797.399577"
+            timestampString = "539508807.2298729"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "820"
-            endingLineNumber = "820"
+            startingLineNumber = "878"
+            endingLineNumber = "878"
             landmarkName = "trClassTransform(const double refX, const double refY, const double refYaw, const vector&lt;double&gt;&amp; ptsX, const vector&lt;double&gt;&amp; ptsY)"
             landmarkType = "9">
          </BreakpointContent>
@@ -26,11 +26,11 @@
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "src/main.cpp"
-            timestampString = "539047797.4003839"
+            timestampString = "539508807.233179"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "999"
-            endingLineNumber = "999"
+            startingLineNumber = "1533"
+            endingLineNumber = "1533"
             landmarkName = "main(int argc, char* argv[])"
             landmarkType = "9">
          </BreakpointContent>
@@ -42,12 +42,92 @@
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "src/main.cpp"
-            timestampString = "539047797.401073"
+            timestampString = "539508807.2364711"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "1007"
-            endingLineNumber = "1007"
+            startingLineNumber = "1656"
+            endingLineNumber = "1656"
             landmarkName = "main(int argc, char* argv[])"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "src/main.cpp"
+            timestampString = "539508807.239195"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "1604"
+            endingLineNumber = "1604"
+            landmarkName = "main(int argc, char* argv[])"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "src/main.cpp"
+            timestampString = "539508807.2405601"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "1272"
+            endingLineNumber = "1272"
+            landmarkName = "createVehiclePath(const vector&lt;double&gt;&amp; theSensedVehicle)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "src/main.cpp"
+            timestampString = "539508807.242139"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "1304"
+            endingLineNumber = "1304"
+            landmarkName = "pathsAreSeparated(const tk::spline&amp; theFirstPath, const tk::spline&amp; theSecondPath, const double thePathSeparation, const double theStartTime, const double theEndTime, const double theDeltaTime)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "src/main.cpp"
+            timestampString = "539508807.244"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "1307"
+            endingLineNumber = "1307"
+            landmarkName = "pathsAreSeparated(const tk::spline&amp; theFirstPath, const tk::spline&amp; theSecondPath, const double thePathSeparation, const double theStartTime, const double theEndTime, const double theDeltaTime)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "src/main.cpp"
+            timestampString = "539508807.2470959"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "1306"
+            endingLineNumber = "1306"
+            landmarkName = "pathsAreSeparated(const tk::spline&amp; theFirstPath, const tk::spline&amp; theSecondPath, const double thePathSeparation, const double theStartTime, const double theEndTime, const double theDeltaTime)"
             landmarkType = "9">
          </BreakpointContent>
       </BreakpointProxy>

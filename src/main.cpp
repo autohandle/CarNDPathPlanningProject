@@ -18,6 +18,11 @@
 //#define PYTHONPLOTTING
 //#define QWTPLOTTING
 const bool DEBUGTRANSFORMS=false;
+const bool DEBUGPATHSPLINE=false;
+const bool DEBUGVEHICLEPATH=false;
+const bool DEBUGLANESELECTION=false;
+const bool DEBUGSENSORREADINGS=false;
+const bool DEBUGSACCELERATION=false;
 
 using namespace std;
 #ifdef PYTHONPLOTTING
@@ -103,6 +108,21 @@ string printVector(const vector<vector<double>> theVector, const int precision=-
   return oss.str();
 }
 
+string printVector(const vector<vector<vector<double>>> theVector, const int precision=-1) {
+  std::ostringstream oss;
+  if (precision >= 0) {
+    //cout << "precision:" << precision << std::endl;
+    oss << std::setprecision(precision);
+  }
+  for (int i = 0; i < theVector.size(); i++) {
+    oss << i << ":\n";
+    oss << printVector(theVector[i]);
+    if (i <  theVector.size()-1)
+      oss << "\n";
+  }
+  return oss.str();
+}
+
 int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vector<double> &maps_y)
 {
   
@@ -151,7 +171,6 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
   return closestWaypoint;
 }
 
-// Transform from Cartesian x,y coordinates to Frenet s,d coordinates
 vector<double> getFrenet(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
 {
   int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
@@ -265,16 +284,15 @@ const static double milesPerHourToMetersPerSecond(const double theMilesPerHour) 
   return theMilesPerHour*MILESPERHOURTOMETERSPERSECOND;
 }
 
-const double MAXIMUMMILESPERHOUR=49.5;// miles per hour
-const double TARGETMILESPERHOUR=MAXIMUMMILESPERHOUR;// miles per hour
+const double MAXIMUMMILESPERHOUR=50.;// miles per hour
 const int CARMOVESPERSECOND=50;// car moves at a well known fixed rate of 50 times per second
 const int LENGTHOFCARPATHTRAJECTORY=CARMOVESPERSECOND*1/*second*/;
-const double PATHLOOKAHEADXDISTANCE=30.;// meters
+const double PATHLOOKAHEADXDISTANCE=40.;// meters
+const double PATHLOOKAHEADSDISTANCE=40.;// meters
 
 const double MAXIMUMMETERSPERSECOND=milesPerHourToMetersPerSecond(MAXIMUMMILESPERHOUR);
-const double TARGETMETERSPERSECOND=milesPerHourToMetersPerSecond(TARGETMILESPERHOUR);
-const double PATHPOINTDELTAT=1./double(LENGTHOFCARPATHTRAJECTORY);
-const double PATHDELTADISTANCEMAX=PATHPOINTDELTAT*MAXIMUMMETERSPERSECOND;
+// In order for the passenger to have an enjoyable ride both the jerk and the total acceleration should not exceed 10 m/s^2.
+const double MAXIMUMACCERLERATION=10.;// m/s^2
 
 const bool isInitialPath(const vector<double> thePath) {
   return thePath.size()==0;
@@ -321,11 +339,51 @@ const vector<vector<double>>& last2PathPoints(const double theCurrentX, const do
   return *xyPoints;
 }
 
-const double yawFromXY(vector<vector<double>> theXYs) {
+const double yawFromXY(const vector<vector<double>>& theXYs) {
   vector<double> xPoints=theXYs[0];
   vector<double> yPoints=theXYs[1];
-  double yaw = atan2(yPoints[1]-yPoints[0], xPoints[1]-xPoints[0]);
+  double yaw = atan2((yPoints[1]-yPoints[0]), (xPoints[1]-xPoints[0]));
   return yaw;
+}
+
+const vector<double> sFromXY(vector<vector<double>>& theXYs, const double theTheta, const vector<double> &theMapsX, const vector<double> &theMapsY) {
+  const vector<double> xPoints=theXYs[0];
+  const vector<double> yPoints=theXYs[1];
+  vector<double> sValues;
+  for (int xy=0; xy<theXYs.size(); xy++) {
+    // 0:s & 1:d
+    const vector<double> sdValue = getFrenet(xPoints[xy], yPoints[xy], theTheta, theMapsX, theMapsY);
+    sValues.push_back(sdValue[0]/* s value*/);
+  }
+  cout << "sFromXY-theXYs:" << printVector(theXYs) << ", sValues:" << printVector(sValues) << std::endl;
+  return sValues;
+}
+
+const vector<double> velocityFromXY(const double theDeltaT, vector<vector<double>> theXYs, const double theTheta, const vector<double> &theMapsX, const vector<double> &theMapsY) {
+  //const vector<double> sValues=sFromXY(theXYs, theTheta, theMapsX, theMapsY);
+  const vector<double> xPoints=theXYs[0];
+  const vector<double> yPoints=theXYs[1];
+  vector<double> vValues;
+  double x0 = xPoints[0];
+  double y0 = yPoints[0];
+  for (int s=1; s<theXYs.size(); s++) {
+    const double x = xPoints[s];
+    const double y = yPoints[s];
+    const double deltaX = x-x0;
+    const double deltaY = y-y0;
+    const double deltaD = sqrt(deltaX*deltaX+deltaY*deltaY);
+    const double velocity=deltaD/theDeltaT;
+    if (DEBUGVEHICLEPATH) {
+      cout << "velocityFromXY-velocity:" << velocity << ", deltaD:" << deltaD << ", deltaX:" << deltaX << ", deltaY:" << deltaY << ", theXYs[" << s << "]:" << printVector(theXYs[s]) << std::endl;
+    }
+    vValues.push_back(velocity);
+    x0 = xPoints[s];
+    y0 = yPoints[s];
+  }
+  if (DEBUGVEHICLEPATH) {
+    cout << "velocityFromXY-theXYs:" << printVector(theXYs) << ", vValues:" << printVector(vValues) << std::endl;
+  }
+  return vValues;
 }
 
 const bool static areSame(const double a, const double b, const double epsilon) {
@@ -764,7 +822,7 @@ const void testCarMap() {
   vector<Eigen::Vector2d> carXYs = transformFromMapToCar(1., -1., PI, mapXs, mapYs);
   if (DEBUGTRANSFORMS)
     cout << "testCarMap-mapXYs:\n" << std::setprecision(10) << printVector(mapXYs)
-    << "\carXYs:\n" << printVector(carXYs) << std::endl;
+    << "\ncarXYs:\n" << printVector(carXYs) << std::endl;
   for (int xy=0; xy<theCarXs.size(); xy++) {
     const Eigen::Vector2d carXY=carXYs[xy];
     assert(areSame(theCarXs[xy], carXY[0]));
@@ -798,7 +856,7 @@ const static vector<vector<double>>& rtClassTransform(const double refX, const d
 
 const static vector<double>& trClassTransform(const double refX, const double refY, const double refYaw, const double theX, const double theY) {
   // rotation followed by translation => TR
-  if (DEBUGTRANSFORMS || true)
+  if (DEBUGTRANSFORMS)
     cout << std::setprecision(10) << "rtClassTransform-refX:" << refX << ", refY:" << refY
     << ", refYaw:" << refYaw << ", cos(refYaw):" << cos(refYaw) << ", sin(refYaw):" << sin(refYaw) <<  std::endl;
   
@@ -809,7 +867,7 @@ const static vector<double>& trClassTransform(const double refX, const double re
   (*xy).push_back(xPoint+refX);
   (*xy).push_back(yPoint+refY);
   
-  if (DEBUGTRANSFORMS || true)
+  if (DEBUGTRANSFORMS)
     cout << "rtClassTransform:" << std::setprecision(10) << ", xPoint:" << xPoint << ", yPoint:" << yPoint << ", xy:" <<  printVector(*xy, 10) << std::endl;
   
   return *xy;
@@ -831,12 +889,471 @@ const static vector<vector<double>>& trClassTransform(const double refX, const d
   return *xyPoints;
 }
 
+// The data format for each car is: [ id, x, y, vx, vy, s, d].
+// The id is a unique identifier for that car. The x, y values are in global map coordinates,
+// and the vx, vy values are the velocity components, also in reference to the global map.
+// Finally s and d are the Frenet coordinates for that car.
+const static double getId(const vector<double> theSensorFusion) {
+  return theSensorFusion[0];
+}
+
+const static int XINDEX = 1;
+const static double getX(const vector<double> theSensorFusion) {
+  return theSensorFusion[XINDEX];
+}
+
+const static int YINDEX = 2;
+const static double getY(const vector<double> theSensorFusion) {
+  return theSensorFusion[YINDEX];
+}
+
+const static int VXINDEX = 3;
+const static double getVx(const vector<double> theSensorFusion) {
+  return theSensorFusion[VXINDEX];
+}
+
+const static int VYINDEX = 4;
+const static double getVy(const vector<double> theSensorFusion) {
+  return theSensorFusion[VYINDEX];
+}
+
+const static int SINDEX = 5;
+const static double getS(const vector<double> theSensorFusion) {
+  return theSensorFusion[SINDEX];
+}
+
+const static int DINDEX = 6;
+const static double getD(const vector<double> theSensorFusion) {
+  return theSensorFusion[DINDEX];
+}
+
+const static double getV(const double theVx, const double theVy) {
+  return sqrt(theVx*theVx+theVy*theVy);
+}
+
+const static double getV(const vector<double> theSensorFusion) {
+  const double vX = getVx(theSensorFusion);
+  const double vY = getVy(theSensorFusion);
+  return getV(vX, vY);
+}
+
+const static int TINDEX = 7;
+const static double getT(const vector<double> theSensorFusion) {
+  return theSensorFusion[TINDEX];
+}
+
+const void setT(vector<double>& theSensorFusion, const double theTime) {
+  if (theSensorFusion.size() < (TINDEX+1)) {
+    theSensorFusion.resize(TINDEX+1);
+  }
+  theSensorFusion[TINDEX]=theTime;
+}
+
+
+const static std::string toString(const vector<double> theSensorFusion) {
+  std::ostringstream oss;
+  if (theSensorFusion.size()>0) {
+    oss << "id:" << getId(theSensorFusion) << ", x:"  << getX(theSensorFusion) << ", y:"  << getY(theSensorFusion) << ", vX:"  << getVx(theSensorFusion) << ", vY:"  << getVy(theSensorFusion) << ", s:"  << getS(theSensorFusion) << ", d:"  << getD(theSensorFusion);
+    if (theSensorFusion.size() > TINDEX) {
+      oss << ", t:" << getT(theSensorFusion);
+    }
+  }
+  return oss.str();
+}
+
+const static std::string toString(const vector<vector<double>> theSensorFusionVector) {
+  std::ostringstream oss;
+  for (int vector=0; vector<theSensorFusionVector.size(); vector++) {
+    oss << "#:" << vector << "\n" << toString(theSensorFusionVector[vector]) << std::endl;
+  }
+  return oss.str();
+}
+
+const static string trueFalse(const bool theBoolean) {
+  return theBoolean==0?"false":"true";
+}
+
+const static std::string toString(const vector<bool> theBooleanVector) {
+  std::ostringstream oss;
+  for (int boolean=0; boolean<theBooleanVector.size(); boolean++) {
+    if (boolean>0) {
+      oss << ", ";
+    }
+    oss << boolean << "? " << trueFalse(theBooleanVector[boolean]);
+  }
+  return oss.str();
+}
+
+const void printSensors(const vector<vector<double>> theSensors) {
+  for (int s=0; s<theSensors.size(); s++) {
+    cout << "#:" << s << " " << toString(theSensors[s]) << std::endl;
+  }
+}
+
+const static vector<vector<double>>& sensedInSameLane(const int theTargetLane, const vector<vector<double>> theSensed) {
+  vector<vector<double>> *inSameLane = new vector<vector<double>>;
+  for (int s=0; s<theSensed.size(); s++) {
+    int sensedLane=determineLane(getD(theSensed[s]));
+    if (sensedLane == theTargetLane) {
+      if (DEBUGVEHICLEPATH) {
+        cout << "id:" << getId(theSensed[s]) << ", sensedLane:" << sensedLane << ", theTargetLane:" << theTargetLane << std::endl;
+      }
+      (*inSameLane).push_back(theSensed[s]);
+    }
+  }
+  return *inSameLane;
+}
+
+const static bool isInFrontOfS(const double theS, const vector<double> theSensed) {
+  const double sensedS=getS(theSensed);
+  return (sensedS>theS);// may be way far away
+}
+
+const static bool isBehindS(const double theS, const vector<double> theSensed) {
+  const double sensedS=getS(theSensed);
+  return (sensedS<theS);// may be way far away
+}
+
+const static vector<double> closestSensedInFront(const int theLane, const double theS, const vector<vector<double>> theSensed) {
+  const vector<vector<double>> inSameLane = sensedInSameLane(theLane, theSensed);
+  vector<double> closestSensed;
+  if (DEBUGVEHICLEPATH) {
+    cout << "closestInFrontInSameLane-closestSensed.size:" << closestSensed.size() << std::endl;
+  }
+  for (int s=0; s<inSameLane.size(); s++) {
+    const bool inFront=isInFrontOfS(theS, inSameLane[s]);
+    if (inFront) {
+      if (closestSensed.size()==0) {
+        closestSensed=inSameLane[s];
+      } else {
+        const double sensedS = getS(inSameLane[s]);
+        const double closestS = getS(closestSensed);
+        if (DEBUGVEHICLEPATH) {
+          cout << "closestInFrontInSameLane-s:" << s << ",sensedS:" << sensedS << ", closestS:" << closestS << std::endl;
+        }
+        if (sensedS < closestS) {
+          closestSensed=inSameLane[s];
+        }
+      }
+    }
+  }
+  if (DEBUGVEHICLEPATH) {
+    cout << "closestInFrontInSameLane-closestSensed:" << toString(closestSensed) << std::endl;
+  }
+  return closestSensed;
+}
+
+const static vector<double> closestSensedInFront(const double theD, const double theS, const vector<vector<double>> theSensed) {
+  return closestSensedInFront(determineLane(theD), theS, theSensed);
+}
+
+const static vector<vector<double>> closestInFrontInLane(const int theNumberOfLanes, const double theS, const vector<vector<double>> theSensed) {
+  vector<vector<double>> closestInLane;
+  closestInLane.resize(theNumberOfLanes);
+  for (int lane=0; lane<theNumberOfLanes; lane++) {
+    closestInLane[lane] = closestSensedInFront(lane, theS, theSensed);
+  }
+  cout << "closestInFrontInLane-closestInLane:" << toString(closestInLane) << std::endl;
+  return closestInLane;
+  
+}
+
+const static vector<double> slowestSensedInFront(const int theTargetLane, const double theS,
+                                                 const vector<vector<double>> theSensed) {
+  const vector<vector<double>> inSameLane = sensedInSameLane(theTargetLane, theSensed);
+  vector<double> slowestSensed;
+  if (DEBUGVEHICLEPATH) {
+    cout << "slowestSensedInFront-closestSensed.size:" << slowestSensed.size() << std::endl;
+  }
+  for (int s=0; s<inSameLane.size(); s++) {
+    const bool inFront=isInFrontOfS(theS, inSameLane[s]);
+    if (inFront) {
+      if (slowestSensed.size()==0) {
+        slowestSensed=inSameLane[s];
+      } else {
+        const double sensedV = getV(inSameLane[s]);
+        const double slowestV = getV(slowestSensed);
+        if (DEBUGVEHICLEPATH) {
+          cout << "slowestSensedInFront-theTargetLane:" << theTargetLane << ", s:" << s << ",sensedV:" << sensedV << ", slowestV:" << slowestV << std::endl;
+        }
+        if (sensedV < slowestV) {
+          slowestSensed=inSameLane[s];
+        }
+      }
+    }
+  }
+  if (DEBUGVEHICLEPATH) {
+    cout << "slowestSensedInFront-closestSensed:" << toString(slowestSensed) << std::endl;
+  }
+  return slowestSensed;
+}
+
+const static vector<vector<double>> slowestInFrontInAnyLane(const int theNumberOfLanes, const double theS, const vector<vector<double>> theSensed) {
+  vector<vector<double>> slowestInLane;
+  slowestInLane.resize(theNumberOfLanes);
+  for (int lane=0; lane<theNumberOfLanes; lane++) {
+    slowestInLane[lane] = slowestSensedInFront(lane, theS, theSensed);
+  }
+  if (DEBUGVEHICLEPATH) {
+    cout << "slowestInFrontInAnyLane-slowestInLane:" << toString(slowestInLane) << std::endl;
+  }
+  return slowestInLane;
+}
+
+const static vector<double> closestBehindInLane(const int theTargetLane, const double theS, const vector<vector<double>> theSensed) {
+  const vector<vector<double>> inTargetLane = sensedInSameLane(theTargetLane, theSensed);
+  vector<double> closestSensed;
+  cout << "closestBehindInLane-closestSensed.size:" << closestSensed.size() << std::endl;
+  for (int s=0; s<inTargetLane.size(); s++) {
+    const bool isBehind=isBehindS(theS, inTargetLane[s]);
+    if (isBehind) {
+      if (closestSensed.size()==0) {
+        closestSensed=inTargetLane[s];
+      } else {
+        const double sensedS = getS(inTargetLane[s]);
+        const double closestS = getS(closestSensed);
+        cout << "closestBehindInLane-theTargetLane:" << theTargetLane << ", s:" << s << ",sensedS:" << sensedS << ", closestS:" << closestS << std::endl;
+        if (sensedS > closestS) {
+          closestSensed=inTargetLane[s];
+        }
+      }
+    }
+  }
+  cout << "closestBehindInLane-closestSensed:" << toString(closestSensed) << std::endl;
+  return closestSensed;
+}
+
+const static vector<vector<double>> closestBehindInAnyLane(const int theNumberOfLanes, const double theS, const vector<vector<double>> theSensed) {
+  vector<vector<double>> closestInLane;
+  closestInLane.resize(theNumberOfLanes);
+  for (int lane=0; lane<theNumberOfLanes; lane++) {
+    closestInLane[lane] = closestBehindInLane(lane, theS, theSensed);
+  }
+  cout << "closestBehindInAnyLane-closestInLane:" << toString(closestInLane) << std::endl;
+  return closestInLane;
+}
+
+const vector<bool> findFasterLane(const int theCurrentLane, const vector<vector<double>> theSensedSlowest) {
+  const double SPEEDFACTORTOBEFASTER=1.2;
+  const double benchmarkSpeed = getV(theSensedSlowest[theCurrentLane]);
+  vector<bool> fasterLane(theSensedSlowest.size(), false);
+  fasterLane.resize(theSensedSlowest.size());
+  for (int lane=0; lane<theSensedSlowest.size(); lane++) {
+    const bool isCurrentLane = (lane==theCurrentLane);
+    if (!isCurrentLane) {
+      const bool isEmptyLane = theSensedSlowest[lane].size()==0;
+      if (isEmptyLane) {
+        fasterLane[lane] = true;
+      } else {// if it is not empty, is it better than the benchmark (.i.e. the current lane)
+        const bool isBetterThanBenchmark = getV(theSensedSlowest[lane]) > (SPEEDFACTORTOBEFASTER*benchmarkSpeed);
+        if (isBetterThanBenchmark) {
+          fasterLane[lane]=true;
+        }
+      }
+    }
+  }
+  if (DEBUGVEHICLEPATH) {
+    cout << "findFasterLane-fasterLane:" << toString(fasterLane) << std::endl;
+  }
+  return fasterLane;
+}
+
+const vector<bool> findSafeLane(const int theCurrentLane, const double theFutureLocation, const double theSafeTimeGap, const vector<vector<double>> theSensedBehind, const double theCurrentLocation, const double theCurrentSpeed, const vector<vector<double>> theSensedInFront) {
+  cout << "findSafeLane-theSensedBehind?" << printVector(theSensedBehind) << std::endl;
+  cout << "findSafeLane-theSensedInFront?" << printVector(theSensedInFront) << std::endl;
+  vector<bool> safeLane(theSensedBehind.size(), false);
+  for (int lane=0; lane<theSensedBehind.size(); lane++) {
+    const bool isCurrentLane = (lane==theCurrentLane);
+    if (isCurrentLane) {// the current lane is always safe
+      safeLane[lane]=true;
+    } else {
+      const bool isEmptyLane = theSensedBehind[lane].size()==0;
+      if (isEmptyLane) {
+        safeLane[lane] = true;
+      } else {// if it is not empty
+        const double sBehind = getS(theSensedBehind[lane]);
+        const double vBehind = getV(theSensedBehind[lane]); // car can accelerate which is not being tracked
+        const double deltaS = theSafeTimeGap*vBehind; // dS=v*dT
+        const double sBehindAtT = sBehind+deltaS;// location of this car at the end of theSafeTimeGap
+        const bool inFrontOfCarBehind = (sBehindAtT<theFutureLocation);
+        const double sInFront = getS(theSensedInFront[lane])+(theCurrentSpeed*1./*second*/);
+        const bool isBehindCarInFront = sInFront>theCurrentLocation;
+        cout << "findSafeLane-inFrontOfCarBehind?" << trueFalse(inFrontOfCarBehind) << ", isBehindCarInFront? "
+          << trueFalse(isBehindCarInFront) << ", sBehind:" << sBehind << ", vBehind:" << vBehind << ", sBehindAtT:"
+          << sBehindAtT  << std::endl;
+        if (inFrontOfCarBehind && isBehindCarInFront) {
+          safeLane[lane]=true;
+        }
+      }
+    }
+  }
+  cout << "findSafeLane-theCurrentLane:" << theCurrentLane << ", theFutureLocation:" << theFutureLocation <<  ", theSafeTimeGap:" << theSafeTimeGap << std::endl;
+  cout << "findSafeLane-safeLane:" << toString(safeLane) << std::endl;
+  return safeLane;
+}
+
+const int findFasterSafeLane(const int theCurrentLane, const vector<bool>& theSafeLanes, const vector<bool>& theFasterLanes) {
+  for (int lane=0; lane<theSafeLanes.size(); lane++) {
+    const bool isCurrentLane = (lane==theCurrentLane);
+    const bool isOnlyOneLaneOver = abs(lane-theCurrentLane) == 1;
+    if (!isCurrentLane && theSafeLanes[lane] && isOnlyOneLaneOver && theFasterLanes[lane]) {
+      return lane;
+    }
+  }
+  return -1;
+}
+
+static vector<vector<vector<double>>> sensedVehicles; // by car id, by rolling buffer size, by sensor id
+static int SENSEDHISTORYLENGTH = 10; // approx seconds
+
+const static void recordSensorReading(const vector<double> theSensed) {
+  const int sensorId = getId(theSensed);
+  vector<vector<double>>& sensedReadings=sensedVehicles[sensorId];
+  //cout << "recordSensorReading-before-sensedReadings[" << sensorId << "]:" << printVector(sensedReadings) << std::endl;
+  if (sensedReadings.size() >= SENSEDHISTORYLENGTH) {// sensed buffer is full, remove oldest;
+    sensedReadings.erase(sensedReadings.begin());
+  }
+  sensedReadings.push_back(theSensed);
+  //cout << "recordSensorReading-after-sensedVehicles[" << sensorId << "]:" << toString(sensedVehicles[sensorId]) << std::endl;
+}
+
+const static void recordSensorReading(vector<double> theSensed, const double theTime) {
+  setT(theSensed, theTime);
+  const int sensorId = getId(theSensed);
+  const bool newlySensedVehicle = sensedVehicles.size()<(sensorId+1);// sensorId is index, so size must be at least id+1
+  //cout << "recordSensorReading-newlySensedVehicle:" << newlySensedVehicle << ", sensorId:" << sensorId << ", sensedVehicles.size:" << sensedVehicles.size() << std::endl;
+  if (newlySensedVehicle) {
+    sensedVehicles.resize(sensedVehicles.size()+20); // increase number of sensedVehicles by 100
+    //cout << "recordSensorReading-sensedVehicles.(re)size:" << sensedVehicles.size() << std::endl;
+  }
+  setT(theSensed, theTime); // record sensor time
+  recordSensorReading(theSensed);
+  //cout << "recordSensorReading-sensedVehicles" << "[" << sensorId << "]:" << toString(sensedVehicles[sensorId]) << std::endl;
+  //cout << "recordSensorReading-sensedVehicles.size:" << sensedVehicles.size() << std::endl;
+}
+
+const static void recordSensorReadings(const vector<vector<double>> theSensed, const double theTime) {
+  //cout << "recordSensorReadings-before-sensedVehicles:" << printVector(sensedVehicles) << std::endl;
+  for (int reading=0; reading<theSensed.size(); reading++) {
+    recordSensorReading(theSensed[reading], theTime);
+  }
+  if (DEBUGSENSORREADINGS) {
+    cout << "recordSensorReadings-after-sensedVehicles:" << printVector(sensedVehicles) << std::endl;
+  }
+}
+
+const void printVehiclePath(const tk::spline& thePath, const double theStartingX, const double theEndingX, const double theDelta) {
+  for (double xValue=theStartingX; xValue<=theEndingX; xValue+=theDelta) {
+    const double yValue=thePath(xValue);
+    cout << "printVehiclePath-recordSensorReadings-xValue:" << xValue << " -> " << yValue << std::endl;
+  }
+}
+
+const tk::spline createVehiclePath(const vector<double>& theSensedVehicle) {
+  const int vehicleId = getId(theSensedVehicle);
+  const vector<vector<double>> vehicleHistory = sensedVehicles[vehicleId];
+  vector<double> tPoints;// x
+  vector<double> sPoints;// y
+  for (int history=0; history<vehicleHistory.size(); history++) {
+    tPoints.push_back(getT(vehicleHistory[history]));
+    sPoints.push_back(getS(vehicleHistory[history]));
+  }
+  tk::spline vehiclePath;
+  if (DEBUGLANESELECTION) {
+    cout << "createVehiclePath-tPoints:" << printVector(tPoints) << "\nsPoints:" << printVector(sPoints) << std::endl;
+  }
+  vehiclePath.set_points(tPoints, sPoints);
+  const double startingX=getT(vehicleHistory[0]);
+  const double endingX=getT(vehicleHistory[vehicleHistory.size()-1]);
+  const double deltaX=1.;
+  if (DEBUGLANESELECTION) {
+    printVehiclePath(vehiclePath, startingX, endingX, deltaX);
+  }
+  return vehiclePath;
+}
+
+const tk::spline createVehiclePath(const double sStart, const double sVelocity, double theStartTime, const double theEndTime, const double theDeltaTime) {
+  vector<double> tPoints;// x
+  vector<double> sPoints;// y
+  double sVehicle=sStart;
+  for (int time=theStartTime; time<theEndTime; time+=theDeltaTime) {
+    tPoints.push_back(time);
+    sPoints.push_back(sVehicle);
+    sVehicle+=sVelocity*theDeltaTime;
+  }
+  tk::spline vehiclePath;
+  if (DEBUGLANESELECTION) {
+    cout << "createVehiclePath\ntPoints:" << printVector(tPoints) << "\nsPoints:" << printVector(sPoints) << ", sStart:" << sStart << ", sVelocity:" << sVelocity << ", theDeltaTime:" << theDeltaTime << std::endl;
+  }
+  vehiclePath.set_points(tPoints, sPoints);
+  if (DEBUGLANESELECTION) {
+    printVehiclePath(vehiclePath, theStartTime, theEndTime, theDeltaTime);
+  }
+  return vehiclePath;
+}
+
+const bool pathsAreSeparated(const tk::spline& theFirstPath, const tk::spline& theSecondPath, const double thePathSeparation, const double theStartTime, const double theEndTime, const double theDeltaTime) {
+  for (double time=theStartTime; time<theEndTime; time+=theDeltaTime ) {
+    const double s1 = theFirstPath(time);
+    const double s2 = theSecondPath(time);
+    const bool isSeparated = abs(s2-s1)>abs(thePathSeparation);
+    if (DEBUGLANESELECTION) {
+      cout << "pathsAreSeparated-s1[" << time << "]:" << s1 << ", s2[" << time << "]:" << s2 << ", isSeparated? " << isSeparated << ", thePathSeparation:" << thePathSeparation << std::endl;
+    }
+    if (!isSeparated) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const bool isLaneSafe(const int theLane, const tk::spline& theVehiclePath, const double theVehicleSize, const double theStartTime, const double theEndTime, const double theDeltaTime, const vector<vector<double>> theSensed) {
+  vector<vector<double>> inTheLane=sensedInSameLane(theLane, theSensed); // all sensed vehicles in this lane
+  for (int vehicle=0; vehicle<inTheLane.size(); vehicle++) {// for all vehicles in lane
+    const vector<double> otherVehicle=inTheLane[vehicle];
+    const tk::spline theOtherVehiclePath = createVehiclePath(otherVehicle);
+    const bool separated=pathsAreSeparated(theVehiclePath, theOtherVehiclePath, theVehicleSize, theStartTime, theEndTime, theDeltaTime);
+    const int vehicleId = getId(otherVehicle);
+    if (DEBUGLANESELECTION) {
+      cout << "isLaneSafe-vehicleId:" << vehicleId << ", separated? " << trueFalse(separated) << ", theLane:" << theLane << std::endl;
+    }
+    if (!separated) {
+      return false;
+    }
+  }
+  return true;
+
+}
+
+const vector<bool> isLaneSafe(const double theVehicleS, const double theVehicleSVelocity, const double theVehicleSize, const double theStartTime, const double theEndTime, const double theDeltaTime, const vector<vector<double>> theSensed) {
+  vector<bool> isSafe(3,false);
+  if (DEBUGLANESELECTION) {
+    cout << "isLaneSafe-theVehicleS:" << theVehicleS << ", theVehicleSVelocity: " << theVehicleSVelocity << ", theVehicleSize:" << theVehicleSize << std::endl;
+  }
+  const tk::spline vehiclePath = createVehiclePath(theVehicleS, theVehicleSVelocity, theStartTime, theEndTime, theDeltaTime);
+  for (int lane=0; lane<2; lane++) {
+    isSafe[lane]=isLaneSafe(lane, vehiclePath, theVehicleSize, theStartTime, theEndTime, theDeltaTime, theSensed);
+  }
+  return isSafe;
+}
+  
+static bool CANCHANGELANES=true;
+static bool isChangingLanes=false;
+static int targetLane=-1;
+static double lastRecordingT = -1;
+static double currentT = 0;
+static double v0;
+static double v1;
+static bool stateTransition=true;
+
 int main(int argc, char* argv[]) {
   
   testXY();
   testRT();
   testTR();
   testCarMap();
+  
+  const int NUMBEROFLANES=3;
 
   uWS::Hub h;
   
@@ -861,9 +1378,6 @@ int main(int argc, char* argv[]) {
   // The track is 6945.554 meters around (about 4.32 miles)
   // If the car averages near 50 MPH, then it should take a little more than 5 minutes
   double max_s = 6945.554;
-  
-  std::cout << "MAXIMUMMILESPERHOUR:" << MAXIMUMMILESPERHOUR << ", MAXIMUMMETERSPERSECOND:" << MAXIMUMMETERSPERSECOND <<std::endl;
-  std::cout << "LENGTHOFCARPATHTRAJECTORY:" << LENGTHOFCARPATHTRAJECTORY << ", PATHPOINTDELTAT:" << PATHPOINTDELTAT << ", PATHDELTADISTANCEMAX:" << PATHDELTADISTANCEMAX << std::endl;
   
   ifstream in_map_(map_file_.c_str(), ifstream::in);
   
@@ -914,7 +1428,7 @@ int main(int argc, char* argv[]) {
           double car_s = j[1]["s"];
           double car_d = j[1]["d"];
           double car_yaw = j[1]["yaw"];// in degrees, use deg2rad(car_yaw) to convert
-          double car_speed = j[1]["speed"];
+          double car_speed = j[1]["speed"];// miles per hour
           
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
@@ -923,26 +1437,59 @@ int main(int argc, char* argv[]) {
           double end_path_s = j[1]["end_path_s"];
           double end_path_d = j[1]["end_path_d"];
           
+          if (car_speed > MAXIMUMMILESPERHOUR) {
+            cout << std::setprecision(6) << "\n\n-------->car_speed:" << car_speed << ", car_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s
+            << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << std::endl;
+          }
+          
+          if (DEBUGSACCELERATION) {
+            cout << std::setprecision(6) << "\n\ncar_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << std::endl;
+          }
           // Sensor Fusion Data, a list of all other cars on the same side of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
-          
+          if (DEBUGLANESELECTION) {
+            printSensors(sensor_fusion);
+          }
+          const vector<double> closestInLane = closestSensedInFront(car_d, car_s, sensor_fusion);
+          const bool isCarInFrontInLane = closestInLane.size()>0;
+          if (DEBUGVEHICLEPATH) {
+            cout << "isCarInFrontInLane?" << isCarInFrontInLane << ", closestInLane:" << toString(closestInLane) << std::endl;
+          }
+
           json msgJson;
           
           vector<double> next_x_vals;
           vector<double> next_y_vals;
           
+          const double PATHPOINTDELTAT=1./double(LENGTHOFCARPATHTRAJECTORY);
+          if (previous_path_x.size() > 0) {// if it is not the initial message, update the current time
+            const int movesCompleted=LENGTHOFCARPATHTRAJECTORY-previous_path_x.size();
+            const double timePassed = PATHPOINTDELTAT*movesCompleted;
+            currentT += timePassed;
+            if (DEBUGSENSORREADINGS) {
+              cout << std::setprecision(6) << "\ncurrentT:" << currentT <<  ", timePassed:" << timePassed << ", movesCompleted:" << movesCompleted << std::endl;
+            }
+            if ((currentT-lastRecordingT >= 1.)) {// record every second
+              recordSensorReadings(sensor_fusion, currentT);
+              lastRecordingT=currentT;
+            }
+          }
+
           // (re)use what is left in previous path
           for (int i=0; i<previous_path_x.size(); i++) {
             next_x_vals.push_back(previous_path_x[i]);
             next_y_vals.push_back(previous_path_y[i]);
           }
-          cout << "\n\nrecovered:" << next_x_vals.size() << " values from previous_path" << std::endl;
-          if (previous_path_x.size() > 2) {
-            cout << "next_x_vals:" << next_x_vals[0] << "," << next_x_vals[1] << "..." <<  next_x_vals[next_x_vals.size()-2] << ", "
-            <<  next_x_vals[next_x_vals.size()-1]
-            << "\nnext_y_vals:" << next_y_vals[0] << "," << next_y_vals[1] << "..." <<  next_y_vals[next_y_vals.size()-2]  <<  ", "
-            << next_y_vals[next_y_vals.size()-1]  << std::endl;
+          if (DEBUGSENSORREADINGS) {
+            cout << "\nrecovered:" << next_x_vals.size() << " values from previous_path" << ", currentT:" << currentT << std::endl;
+            if (previous_path_x.size() > 2) {
+              cout << "next_x_vals:" << next_x_vals[0] << "," << next_x_vals[1] << "..." <<  next_x_vals[next_x_vals.size()-2] << ", "
+              <<  next_x_vals[next_x_vals.size()-1]
+              << "\nnext_y_vals:" << next_y_vals[0] << "," << next_y_vals[1] << "..." <<  next_y_vals[next_y_vals.size()-2]  <<  ", "
+              << next_y_vals[next_y_vals.size()-1]  << std::endl;
+            }
           }
+
 
           /*
            Start by simply trying to move the car forward in a straight line at a constant 50 MPH velocity. Use the car's (x, y) localization information and its heading direction to create a simple, straight path that is drawn directly in front of the car.
@@ -952,34 +1499,43 @@ int main(int argc, char* argv[]) {
            (.5 meters/move)(50 moves/second)=25 meters/second
            (25 m/sec)(3.2804 ft/m)(1/5280 mi/ft)(60 sec/min)(60 min/hr)=55.92 mi/hr
            */
-          const vector<vector<double>>& lastXyPathPoints =
+          targetLane=(targetLane==-1)?determineLane(car_d):targetLane;//set targetLane on start-up
+          const vector<vector<double>> lastXyPathPoints =
           previous_path_x.size()<2?last2PathPoints(car_x, car_y, deg2rad(car_yaw)):last2PathPoints(previous_path_x, previous_path_y);
-          cout << std::setprecision(6) << "car_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << std::endl;
+          if (DEBUGPATHSPLINE) {
+            cout << std::setprecision(6) << "car_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << ", car_speed:" << car_speed << " mph" << std::endl;
+          }
           vector<double> xMapPoints=lastXyPathPoints[0];
-          cout << "xMapPoints:" << printVector(xMapPoints, 10) << std::endl;
           vector<double> yMapPoints=lastXyPathPoints[1];
-          cout << "yMapPoints:" << printVector(yMapPoints, 10) << std::endl;
           const double pathInterpolatedYaw=yawFromXY(lastXyPathPoints);
-          cout << std::setprecision(6) << "pathInterpolatedYaw:" << pathInterpolatedYaw << ", car_yaw:" << deg2rad(car_yaw) << std::endl;
-          
+          if (DEBUGPATHSPLINE) {
+            cout << "xMapPoints:" << printVector(xMapPoints, 10) << std::endl;
+            cout << "yMapPoints:" << printVector(yMapPoints, 10) << std::endl;
+            cout << std::setprecision(6) << "pathInterpolatedYaw:" << pathInterpolatedYaw << ", car_yaw:" << deg2rad(car_yaw) << std::endl;
+          }
           // add additional waypoints in front of car in map coordinates, the spline needs more than 2 points
-          const int currentLane=determineLane(car_d);
-          for (int p=0; p<3; p++) {
-            double lookAheadS = car_s+(p+1)*PATHLOOKAHEADXDISTANCE;
-            vector<double> mapXY = getXY(lookAheadS, laneCenter(currentLane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          //const int currentLane=determineLane(car_d);
+          const int NUMBEROFSPLINEPOINTS=3;
+          //const double deltaS = (3.*PATHLOOKAHEADSDISTANCE)/double(NUMBEROFSPLINEPOINTS);
+          const double pathLookaheadDistance=isChangingLanes?PATHLOOKAHEADSDISTANCE:PATHLOOKAHEADSDISTANCE;
+          for (int p=0; p<NUMBEROFSPLINEPOINTS; p++) {
+            double lookAheadS = car_s+(p+1)*pathLookaheadDistance;
+            //double lookAheadS = car_s+(p+1)*deltaS;
+            vector<double> mapXY = getXY(lookAheadS, laneCenter(targetLane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
             xMapPoints.push_back(mapXY[0]);
             yMapPoints.push_back(mapXY[1]);
           }
           // xPoints[1], yPoints[1] is last projected location for the car (usually) using the previous path
-          const vector<vector<double>>& classTransformedXY=rtClassTransform(xMapPoints[1], yMapPoints[1], deg2rad(car_yaw), xMapPoints, yMapPoints);
+          const vector<vector<double>>& classTransformedXY=rtClassTransform(xMapPoints[1], yMapPoints[1], deg2rad(car_yaw), xMapPoints, yMapPoints);// car_yaw for 1st 2 points is around 0 & should stay 0 for last 3 added for spline to be flat
           const vector<double> xTransformedPoints=classTransformedXY[0];
-          cout << "class-xTransformedPoints:" << printVector(xTransformedPoints, 10) << std::endl;
           const vector<double> yTransformedPoints=classTransformedXY[1];
-          cout << "class-yTransformedPoints:" << printVector(yTransformedPoints, 10) << std::endl;
-          
-          cout << "affine-xPoints:" << printVector(xMapPoints, 10) << std::endl;
-          cout << "affine-yPoints:" << printVector(yMapPoints, 10) << std::endl;
-          cout << std::setprecision(6) << "pathInterpolatedYaw:" << pathInterpolatedYaw << ", car_yaw:" << deg2rad(car_yaw) << std::endl;
+          if (DEBUGPATHSPLINE) {
+            cout << "class-xTransformedPoints:" << printVector(xTransformedPoints, 10) << std::endl;
+            cout << "class-yTransformedPoints:" << printVector(yTransformedPoints, 10) << std::endl;
+            cout << "affine-xPoints:" << printVector(xMapPoints, 10) << std::endl;
+            cout << "affine-yPoints:" << printVector(yMapPoints, 10) << std::endl;
+            cout << std::setprecision(6) << "pathInterpolatedYaw:" << pathInterpolatedYaw << ", car_yaw:" << deg2rad(car_yaw) << std::endl;
+          }
           const vector<Eigen::Vector2d> carXYFromMapXY=transformFromMapToCar(xMapPoints[1], yMapPoints[1], deg2rad(car_yaw), xMapPoints, yMapPoints);
           //cout << "affine-carXYFromMapXY:\n" << printVector(carXYFromMapXY, 10) << std::endl;
           
@@ -995,51 +1551,223 @@ int main(int argc, char* argv[]) {
           //from the eigen vector to the std vector
           //cout << "carPointsFromMap:\n" << printVector(carPointsFromMap, 10) << std::endl;
           vector<vector<double>> carXY=unpackV2D(carXYFromMapXY);
-          cout << "carXY[0]:\n" << printVector(carXY[0], 10) << std::endl;
-          cout << "carXY[1]:\n" << printVector(carXY[1], 10) << std::endl;
-
-          tk::spline s;
-          s.set_points(carXY[0], carXY[1]);
-          const double yAtLookAheadDistance=s(PATHLOOKAHEADXDISTANCE);
-          const double lengthOfLinearFitToSpline=sqrt(PATHLOOKAHEADXDISTANCE*PATHLOOKAHEADXDISTANCE+yAtLookAheadDistance*yAtLookAheadDistance);
-          const int numberOfSamples=lengthOfLinearFitToSpline/(PATHPOINTDELTAT*TARGETMETERSPERSECOND);// meters/(seconds*metes/second)
-          const int classN = lengthOfLinearFitToSpline/(.02*49.5/2.24);
-          cout << "numberOfSamples:" << numberOfSamples << ", classN:" << classN << ", next_x_vals.size:" << next_x_vals.size() << std::endl;
+          if (DEBUGPATHSPLINE) {
+            cout << "carXY[0]:\n" << printVector(carXY[0], 10) << std::endl;
+            cout << "carXY[1]:\n" << printVector(carXY[1], 10) << std::endl;
+          }
           
-          const double deltaX=PATHLOOKAHEADXDISTANCE/double(numberOfSamples);
+          const double patLookaheadPlanningDistance=PATHLOOKAHEADSDISTANCE;// mixing s & x==PATHLOOKAHEADSDISTANCE
+          //const double targetVelocity=isCarInFrontInLane? min(MAXIMUMMETERSPERSECOND, getV(closestInLane)): MAXIMUMMETERSPERSECOND;
+          double targetVelocity=.90*MAXIMUMMETERSPERSECOND;
+          double targetAcceleration=0.75*MAXIMUMACCERLERATION;
+          
+          double projectedPathVelocity=previous_path_x.size()<2?
+          0. : velocityFromXY(PATHPOINTDELTAT/*theDeltaT*/, lastXyPathPoints, pathInterpolatedYaw, map_waypoints_x, map_waypoints_y)[0];
+          if (DEBUGVEHICLEPATH) {
+            cout << "projectedPathVelocity:" << projectedPathVelocity << ", pathInterpolatedYaw:" << pathInterpolatedYaw << std::endl;
+            cout << std::setprecision(6) << "car_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << ", car_speed:" << car_speed << " mph, closestInLane:" << (closestInLane.size()>0?getV(closestInLane):-1.) << std::endl;
+          }
+          
+          if (projectedPathVelocity > MAXIMUMMETERSPERSECOND) {
+            cout << "\n\ncar_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s
+            << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << ", projectedPathVelocity:" << projectedPathVelocity << std::endl;
+          }
+
+          
+          if (isCarInFrontInLane) {
+            const double closestInLaneDeltaS = getS(closestInLane)-car_s;
+            const bool closeToPlanningHorizon=closestInLaneDeltaS<1.35*patLookaheadPlanningDistance;
+            if (DEBUGVEHICLEPATH) {
+            cout << "closeToPlanningHorizon:" << closeToPlanningHorizon << ", closestInLaneDeltaS:" << closestInLaneDeltaS
+            << ", getS:" << getS(closestInLane) << ", (2x)patLookaheadPlanningDistance:" << 2.*patLookaheadPlanningDistance
+            << ", closestInLaneDeltaS:" << closestInLaneDeltaS << std::endl;
+            }
+            if (closeToPlanningHorizon) {
+              if (DEBUGVEHICLEPATH) {
+              cout << "before-isChangingLanes:" << isChangingLanes << ", in targetLane? " << (determineLane(car_d)==targetLane) << ", targetVelocity:" << targetVelocity <<  ", targetLane:" << targetLane << std::endl;
+              }
+              if (CANCHANGELANES && isChangingLanes) {// if i'm changing lanes
+                if (determineLane(car_d)==targetLane) {// have already changed?
+                  isChangingLanes=false;// stop lane changing
+                  stateTransition=false;
+                } else {// changing, maintain velocity
+                  //targetVelocity=currentCarPassingVelocity; // maintain car passing velocity to avoid acceleration errors
+                }
+              } else {// if i'm not changing & i'm inside the planning horizon, can i change?
+                //const vector<vector<double>> closestSensedBehind = closestBehindInAnyLane(NUMBEROFLANES, car_s, sensor_fusion);
+                const vector<vector<double>> slowestSensedInFront = slowestInFrontInAnyLane(NUMBEROFLANES, car_s, sensor_fusion);
+                //const vector<vector<double>> closestInFront = closestInFrontInLane(NUMBEROFLANES, car_s, sensor_fusion);
+                const vector<bool> fasterLanes = findFasterLane(determineLane(car_d), slowestSensedInFront);
+                //const vector<bool> safeLanes = findSafeLane(determineLane(car_d), end_path_s, PATHLOOKAHEADSDISTANCE/milesPerHourToMetersPerSecond(car_speed), closestSensedBehind, car_s, milesPerHourToMetersPerSecond(car_speed), closestInFront);
+                const vector<bool> safeLanes=isLaneSafe(car_s, targetVelocity, 25./*size of vehicle*/, currentT, currentT+PATHLOOKAHEADSDISTANCE/PATHPOINTDELTAT, 60.*(50.*PATHPOINTDELTAT/* 1 second */) /* 1 minute */ , sensor_fusion);
+                vector<bool> dummy(3,false);
+                const int safeLane=findFasterSafeLane(determineLane(car_d), safeLanes, fasterLanes);
+                if (CANCHANGELANES && safeLane>=0) {
+                  targetLane=safeLane;
+                  isChangingLanes=true;
+                  stateTransition=true;
+                  if (DEBUGVEHICLEPATH) {
+                    cout << "changing-isChangingLanes:" << isChangingLanes << ", targetVelocity:" << targetVelocity << std::endl;
+                  }
+                } else {// inside the planning & not changing lanes, track vehicle in front
+                  targetVelocity=getV(closestInLane);// track vehicle in front, unless i'm changing lanes
+                  if (DEBUGVEHICLEPATH) {
+                    cout << "not changing-isChangingLanes:" << isChangingLanes << ", targetVelocity:" << targetVelocity << std::endl;
+                  }
+                }
+              }
+              if (DEBUGVEHICLEPATH) {
+                cout << "after-isChangingLanes:" << isChangingLanes << ", targetVelocity:" << targetVelocity << std::endl;
+              }
+              const double endDeltaT=PATHPOINTDELTAT*next_x_vals.size()/*number of previous points*/;// time in previous path = dt*N
+              const double endDeltaS = endDeltaT*getV(closestInLane);// dT*V=dS, distance traveled in dT
+              const double closestEndS = getS(closestInLane)+endDeltaS;// s+dS, position of closest car t the end of the previous path
+              const double closestDeltaS = closestEndS-end_path_s;// s to closest car at the end of the previous path (current planning cycle)
+              //const double deltaD = deltaS-patLookaheadPlanningDistance;// compare distance to closest & planning horizon
+              const bool insidePlanningHorizon = closestDeltaS<patLookaheadPlanningDistance;// compare distance to closest & planning horizon
+              if (DEBUGVEHICLEPATH) {
+                cout << "insidePlanningHorizon:" << insidePlanningHorizon /*<< ", deltaD:" << deltaD*/ << ", closestDeltaS:" << closestDeltaS
+                  << ", endDeltaT:" << endDeltaT << ", end_path_s:" << end_path_s << ", patLookaheadPlanningDistance:"
+                  << patLookaheadPlanningDistance << ", endDeltaS:" << endDeltaS << ", getV:" << getV(closestInLane)
+                  << ", getS:" << getS(closestInLane) << ", closestEndS:" << closestEndS << std::endl;
+              }
+              if (insidePlanningHorizon) {// adjust velocity
+                const double deltaS = patLookaheadPlanningDistance-endDeltaS;// shortfall
+                const double percent = deltaS/patLookaheadPlanningDistance;
+                const double velocityFactor = 1.-max(0.,percent/* 0 to 1*/);// 1 to 0
+                //const double deltaV = getV(closestInLane)-projectedPathVelocity;// speed difference
+                targetVelocity = velocityFactor*getV(closestInLane);
+                //const double tAtEndOfPreviousPath = next_x_vals.size()*PATHPOINTDELTAT;
+                //const double deltaT = LENGTHOFCARPATHTRAJECTORY*PATHPOINTDELTAT-tAtEndOfPreviousPath;
+                //const double accelerationToMatchV = deltaV/deltaT;
+                const bool isSlowingDown = getV(closestInLane)<projectedPathVelocity;
+                const bool isCloseToCarInFront = closestDeltaS < .5*patLookaheadPlanningDistance;
+                if ( isSlowingDown && isCloseToCarInFront) {// getting desperate?
+                  targetAcceleration=MAXIMUMACCERLERATION;
+                  const double timeToIntercept = closestInLaneDeltaS/milesPerHourToMetersPerSecond(car_speed);// miles per hour!!
+                  cout << "!!------------>targetVelocity:" << targetVelocity << ", timeToIntercept:" << timeToIntercept << std::endl;
+                }
+                if (DEBUGVEHICLEPATH) {
+                  cout << "insidePlanningHorizon-targetVelocity:" << targetVelocity << ", percent:" << percent
+                    << ", velocityFactor:" << velocityFactor
+                    << ". targetAcceleration:" << targetAcceleration << ", deltaS:" << deltaS << ", isSlowingDown:"
+                    << isSlowingDown << ", isCloseToCarInFront" << isCloseToCarInFront << std::endl;
+                }
+              }
+              //const int addtionalPathPoints=LENGTHOFCARPATHTRAJECTORY-next_x_vals.size();
+              //const double gapDeltaT=PATHPOINTDELTAT*addtionalPathPoints;// time
+              //const double numberOfPointsToMatch = deltaD/deltaT;
+              //cout << "velocityToMatchS:" << velocityToMatchS << ", deltaD:" << deltaD << ", deltaS:" << deltaS << ", end_path_s:" << end_path_s << ", endDeltaS:" << endDeltaS << ", endDeltaT" << endDeltaT << std::endl;
+            }
+           
+            // if distanceTo<PATHLOOKAHEADSDISTANCE is close then use min, is less then reduce
+            //car_targetVelocity=(isCarInFrontInLane && insideThePlanningHorizon)?min(MAXIMUMMETERSPERSECOND, getV(closestInLane)):targetVelocity;
+            if (DEBUGVEHICLEPATH) {
+              cout << "insidePlanningHorizon-deltaD:" << closestInLaneDeltaS << targetVelocity << std::endl;
+            }
+          }
+
+          
+          const double TARGETMILESPERHOUR=MAXIMUMMILESPERHOUR;// miles per hour
+          const double TARGETMETERSPERSECOND=milesPerHourToMetersPerSecond(TARGETMILESPERHOUR);
+          const double PATHDELTADISTANCEMAX=PATHPOINTDELTAT*MAXIMUMMETERSPERSECOND;
+          if (DEBUGVEHICLEPATH) {
+            std::cout << "MAXIMUMMILESPERHOUR:" << MAXIMUMMILESPERHOUR << ", MAXIMUMMETERSPERSECOND:" << MAXIMUMMETERSPERSECOND <<std::endl;
+            std::cout << "LENGTHOFCARPATHTRAJECTORY:" << LENGTHOFCARPATHTRAJECTORY << ", PATHPOINTDELTAT:" << PATHPOINTDELTAT << ", PATHDELTADISTANCEMAX:" << PATHDELTADISTANCEMAX << std::endl;
+          }
+        
+          tk::spline sPathFromCar;
+          if (DEBUGVEHICLEPATH) {
+            cout << "carXY" << printVector(carXY) << std::endl;
+          }
+          sPathFromCar.set_points(carXY[0], carXY[1]);
+          const double sAtPATHLOOKAHEADPLANNINGDISTANCE=sPathFromCar(PATHLOOKAHEADXDISTANCE);
+          const double lengthOfLinearFitToSpline=sqrt(PATHLOOKAHEADXDISTANCE*PATHLOOKAHEADXDISTANCE+sAtPATHLOOKAHEADPLANNINGDISTANCE*sAtPATHLOOKAHEADPLANNINGDISTANCE);
           // spline points in car coordinates that will fill in next_?_vals after those copied over from previous_path
           int addtionalCarPoints=LENGTHOFCARPATHTRAJECTORY-next_x_vals.size();
           vector<double> xAdditionalCarPoints;
           vector<double> yAdditionalCarPoints;
+          double carPointX=0.;
+          const int ACCELERATIONSTEPS=.25*LENGTHOFCARPATHTRAJECTORY;
+          double pathPointVelocity=projectedPathVelocity;// initial value (reducing acceleration discontinuity)
           for (int additionalPoint=0; additionalPoint<addtionalCarPoints; additionalPoint++) {
+            
+            double deltaV=targetVelocity-pathPointVelocity; // m/s
+            double signOfDeltaV = deltaV<0.?-1.:1.;
+            double transitionAcceleration = targetAcceleration;
+            
+            if (stateTransition) {
+              transitionAcceleration=isChangingLanes?transitionAcceleration:.5*transitionAcceleration;
+              if (DEBUGVEHICLEPATH) {
+                cout << "stateTransition:" << stateTransition << ", transitionAcceleration:" << transitionAcceleration << ", targetAcceleration:" << targetAcceleration << std::endl;
+              }
+            }
+            
+            pathPointVelocity+=(signOfDeltaV*transitionAcceleration*PATHPOINTDELTAT); // v1=v0+a*dt
+            
+            if (pathPointVelocity > MAXIMUMMETERSPERSECOND) {
+              cout << std::setprecision(6) << "\n\n-------->pathPointVelocity:" << pathPointVelocity << ", car_x:" << car_x
+                << ", car_y:" << car_y << ", car_s:" << car_s
+                << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << std::endl;
+            }
+            if (DEBUGVEHICLEPATH) {
+              cout << "pathPointVelocity:" << pathPointVelocity << ", targetVelocity:" << targetVelocity << ", transitionAcceleration:" << transitionAcceleration << ", targetAcceleration:" << targetAcceleration << ", deltaV:" << deltaV << ", projectedPathVelocity:" << projectedPathVelocity << std::endl;
+            }
+            //pathPointVelocity=targetVelocity;
+            //const int numberOfSamples=lengthOfLinearFitToSpline/(PATHPOINTDELTAT*TARGETMETERSPERSECOND);// meters/(seconds*metes/second)
+            const int numberOfSamples=lengthOfLinearFitToSpline/(PATHPOINTDELTAT*abs(pathPointVelocity));// meters/(seconds*metes/second)
+            if (DEBUGVEHICLEPATH) {
+              //const int classN = lengthOfLinearFitToSpline/(.02*49.5/2.24);
+              const int classN = lengthOfLinearFitToSpline/(.02*abs(pathPointVelocity)/2.24);
+              cout << "numberOfSamples:" << numberOfSamples << ", next_x_vals.size:" << next_x_vals.size()
+              << ", targetVelocity:" << targetVelocity << ", pathPointVelocity:" << pathPointVelocity << ", classN:" << classN
+                <<std::endl;
+            }
+            const double deltaX=PATHLOOKAHEADXDISTANCE/double(numberOfSamples);
+            
             // additionalPoint+1: so deltaX is never 0, so next point added will not match last point in previous path
-            const double carPointX=(additionalPoint+1)*deltaX;
+            carPointX+=deltaX;
             xAdditionalCarPoints.push_back(carPointX);
-            const double carPointY=s(carPointX);
+            const double carPointY=sPathFromCar(carPointX);
             yAdditionalCarPoints.push_back(carPointY);
+            
+            v0=v1;
+            v1=pathPointVelocity;
+            const double acceleration=(v1-v0)/PATHPOINTDELTAT;// a=dv/dt
+            if (DEBUGSACCELERATION) {
+              cout << "acceleration:" << acceleration << ", v1:" << v1 << ", v0:" << v0 << "(v1-v0):" << (v1-v0) << ", deltaV:" << deltaV <<std::endl;
+            
+              if (abs(acceleration) > abs(MAXIMUMACCERLERATION)) {
+                cout << "------------------->acceleration:" << acceleration << ", pathPointVelocity:" << pathPointVelocity << ", v1:" << v1 << ", v0:" << v0 << ", deltaV:" << deltaV << ", targetAcceleration:" << targetAcceleration << ", PATHPOINTDELTAT:" << PATHPOINTDELTAT << "(v1-v0):" << (v1-v0) << std::endl;
+              }
+            }
           }
-          
+          if (projectedPathVelocity > .9*targetVelocity) {
+            stateTransition=false;
+          }
           // transform the additional car xy point back to the map
           const vector<vector<double>>& classMapPointsXY=trClassTransform(xMapPoints[1], yMapPoints[1], deg2rad(car_yaw), xAdditionalCarPoints, yAdditionalCarPoints);
-          cout << "class-classMapPointsXY:" << printVector(classMapPointsXY, 10) << std::endl;
           const vector<double> xClassMapPoints=classMapPointsXY[0];
-          cout << "class-xClassMapPoints:" << printVector(xClassMapPoints, 10) << std::endl;
           const vector<double> yClassMapPoints=classMapPointsXY[1];
-          cout << "class-yClassMapPoints:" << printVector(yClassMapPoints, 10) << std::endl;
-          
+          if (DEBUGPATHSPLINE) {
+            cout << "class-classMapPointsXY:" << printVector(classMapPointsXY, 10) << std::endl;
+            cout << "class-xClassMapPoints:" << printVector(xClassMapPoints, 10) << std::endl;
+            cout << "class-yClassMapPoints:" << printVector(yClassMapPoints, 10) << std::endl;
+          }
           const vector<Eigen::Vector2d> additionalMapXYPoints=transformFromCarToMap(xMapPoints[1], yMapPoints[1], deg2rad(car_yaw), xAdditionalCarPoints, yAdditionalCarPoints);
           //cout << "affine-additionalMapXYPoints:\n" << printVector(additionalMapXYPoints, 10) << std::endl;
           
           // add new xy points to previous path from car
           vector<vector<double>> mapXYPoints=unpackV2D(additionalMapXYPoints);
-          cout << "mapXYPoints[0]:\n" << printVector(mapXYPoints[0], 10) << std::endl;
-          cout << "mapXYPoints[1]:\n" << printVector(mapXYPoints[1], 10) << std::endl;
           for (int additionalPoint=0; additionalPoint<addtionalCarPoints; additionalPoint++) {
             next_x_vals.push_back(additionalMapXYPoints[additionalPoint][0]);
             next_y_vals.push_back(additionalMapXYPoints[additionalPoint][1]);
           }
-          cout << "next_x_vals.size:" << next_x_vals.size() << ", next_y_vals.size:" << next_y_vals.size() << std::endl;
-
+          if (DEBUGPATHSPLINE) {
+            cout << "mapXYPoints[0]:\n" << printVector(mapXYPoints[0], 10) << std::endl;
+            cout << "mapXYPoints[1]:\n" << printVector(mapXYPoints[1], 10) << std::endl;
+            cout << "next_x_vals.size:" << next_x_vals.size() << ", next_y_vals.size:" << next_y_vals.size() << std::endl;
+          }
 #ifdef xx
           //double dist_inc = 0.5;// meters, speed is set by
           double dist_inc = PATHDELTADISTANCEMAX;
@@ -1057,11 +1785,13 @@ int main(int argc, char* argv[]) {
             //next_y_vals.push_back(car_y/*current car y position*/+(dist_inc*i)*sin(deg2rad(car_yaw)));
           }
 #endif
-          cout << std::setprecision(6) << "car_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << std::endl;
-          cout << "next_x_vals:" << next_x_vals[0] << "," << next_x_vals[1] << "..." <<  next_x_vals[next_x_vals.size()-2] << ", "
-          <<  next_x_vals[next_x_vals.size()-1]
-          << "\nnext_y_vals:" << next_y_vals[0] << "," << next_y_vals[1] << "..." <<  next_y_vals[next_y_vals.size()-2]  <<  ", "
-          << next_y_vals[next_y_vals.size()-1]  << std::endl;
+          if (DEBUGVEHICLEPATH) {
+            cout << std::setprecision(6) << "car_x:" << car_x << ", car_y:" << car_y << ", car_s:" << car_s << ", car_d:" << car_d << ", car_yaw:"<< deg2rad(car_yaw) << ", car_speed:" << car_speed << std::endl;
+            cout << "next_x_vals:" << next_x_vals[0] << "," << next_x_vals[1] << "..." <<  next_x_vals[next_x_vals.size()-2] << ", "
+            <<  next_x_vals[next_x_vals.size()-1]
+            << "\nnext_y_vals:" << next_y_vals[0] << "," << next_y_vals[1] << "..." <<  next_y_vals[next_y_vals.size()-2]  <<  ", "
+            << next_y_vals[next_y_vals.size()-1]  << std::endl;
+          }
           // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
