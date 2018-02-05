@@ -19,7 +19,23 @@ Softwares-MacBook-Pro:build david$
 
 #### Valid Trajectories
 ##### The car is able to drive at least 4.32 miles without incident.
+
 ![alt text](images/lanes.png "movie slide")
+
+In the picture, you can see the car has gone more than 4.32 miles without incident and is in the process of changing lanes. A [short video](https://s3.amazonaws.com/autohandle.com/video/CarND-Path-Planning-Project.mp4) from which this still was extracted is shown below.
+
+As currently programmed, the vehicle does not perform properly in all scenarios. I assume that I must stiil have coding errors.
+
+The vehicle can get acceleration errors, especially if:
+  * it is tracking one of the other cars that start and stop a lot
+  * it gets cut off
+  * it decides to change lanes when there is a sharp curve
+
+Although rare, in my experience, the vehicle can collide with other cars when it changes lanes, especially if the other car is just slightly behind it and speeding up.
+
+It can get confused and trigger a *out of lane* error if it is cut off during a lane change.
+
+However, depending on the scenario the vehicle encounters, in my experience, the vehicle usually can eventually go 4 or 5 miles wthout incident required for the project.
 
 ##### The car drives according to the speed limit.
 To insure the car stays under the speed limit, [the code](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1561)
@@ -78,7 +94,7 @@ If a state transition was in progress, the [accelaration was reduced](https://gi
 
 ###### Car does not have collisions.
 
-####### Collisions during a lane change
+###### Collisions during a lane change
 
 The vehicle avoids collisions by [tracking the sensor parameters](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1206-L1243) of the other vehicles.
 
@@ -113,7 +129,7 @@ const static void recordSensorReading(const vector<double> theSensed) {
 }
 ```
 
-after [attaching the current time](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1220-L1233) to the sensor reading
+after [attaching the current time](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1220-L1233) to the sensor reading.
 
 ``` C++
 const static void recordSensorReading(vector<double> theSensed, const double theTime) {
@@ -128,7 +144,7 @@ const static void recordSensorReading(vector<double> theSensed, const double the
 }
 ```
 
-with an *s distance* vesus *time* historical record of the the *sensor_fusion* for the other vehicles, [a spline can be fitted](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1252-L1273) to the historic *s* and *t* values to predict the *s position* of the other vehicle a future *time t*.
+With an *s distance* vesus *time* historical record of the the *sensor_fusion* for each of the other vehicles, [a spline can be fitted](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1252-L1273) to the historic *s* and *t* values to predict the *s position* of the other vehicle a future *time t*.
 
 ``` C++
 const tk::spline createVehiclePath(const vector<double>& theSensedVehicle) {
@@ -185,7 +201,7 @@ const bool pathsAreSeparated(const tk::spline& theFirstPath, const tk::spline& t
 
 to see if the gap between the two vehicles is large enough to prevent a collision durng a lane change.
 
-####### Collisions with the car in front
+###### Collisions with the car in front
 
 The car in front is detected in each processing loop by [scanning all the cars in the same lane](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L993-L1059) as the vehicle, `car_d`, and selecting the one that is the closest to, but larger than the car's current position, `car_s`.
 
@@ -221,7 +237,7 @@ const bool insidePlanningHorizon = closestDeltaS<patLookaheadPlanningDistance;//
 }
 ```
 
-In every processing loop the `targetVelocity` continues to be adjusted to match the vehicle in front.
+In each processing loop the `targetVelocity` continues to be adjusted to match the vehicle in front.
 
 ###### The car stays in its lane, except for the time between changing lanes.
 
@@ -250,7 +266,7 @@ const static vector<vector<double>> slowestInFrontInAnyLane(const int theNumberO
 }
 ```
 
-Each lane is [checked](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1136-L1159) by `findFasterLane`
+Then each lane is [checked](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1136-L1159) by `findFasterLane` searching for a better lane choice.
 
 ``` C++
 const vector<bool> findFasterLane(const int theCurrentLane, const vector<vector<double>> theSensedSlowest) {
@@ -279,7 +295,11 @@ const vector<bool> findFasterLane(const int theCurrentLane, const vector<vector<
 }
 ```
 
-The lane is selected if there is nothing in front or if there are vehicles in front that all of the vehicles are going at least 20% faster. Then the selected lanes are [checked for safety](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1328-L1338), `isLaneSafe`, by comparing the spline path of each of the other vehicles, in that lane, with the spline path of the driven vehicle.
+A lane is selected if
+  * that lane has nothing in front of the driven vehicle or
+  * if the lane does have vehicles, then all of the vehicles in that lane are going at least 20% faster.
+
+Then the `fasterLanes` are [checked for safety](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1328-L1338). As discussed in collision, `isLaneSafe` compares the spline path of the other vehicles, in that lane, with the spline path of the driven vehicle. If the spline paths are too close, that lane is ignored.
 
 ``` C++
 const vector<bool> isLaneSafe(const double theVehicleS, const double theVehicleSVelocity, const double theVehicleSize, const double theStartTime, const double theEndTime, const double theDeltaTime, const vector<vector<double>> theSensed) {
@@ -292,7 +312,7 @@ const vector<bool> isLaneSafe(const double theVehicleS, const double theVehicleS
 }
 ```
 
-If the lane is [both safe and faster](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1605-L1617), the vehicle will transition to a new lane.
+If the lane is [both safe and faster](https://github.com/autohandle/CarNDPathPlanningProject/blob/185858841082cf7cd50254066f7de2d6fc3352e8/src/main.cpp#L1605-L1617), the vehicle will transition to a safe and faster lane.
 
 ```C++
 if (CANCHANGELANES && safeLane>=0) {
@@ -310,12 +330,15 @@ If there is no safe and faster lane, the vehicle continues to the track the vehi
 ##### Reflection
 ###### There is a reflection on how to generate paths.
 
+A had a lot of difficulty generating paths for this assignments. The difficulty was compounded by the profound disconnect between the class presentation and the suggested implementation. Even so, several things it would have helped me:
+  * a implementation for the calculation of acceleration and jerk errors, so i could figure out exactly what was wrong
+  * *unit test* scenarios that could be read from a file, so i could repeatedly work on problem areas, before using the randomized simulator
 
 #### Video
 
 The video of the car after going "4.32 miles without incident" and showing "the car is able to change lanes":
 
-[third order polynomial](https://s3.amazonaws.com/autohandle.com/video/CarND-Path-Planning-Project.mp4)
+[path video](https://s3.amazonaws.com/autohandle.com/video/CarND-Path-Planning-Project.mp4)
 
 
 The video was created by using a [screen recording tool](http://www.idownloadblog.com/2016/02/26/how-to-record-part-of-mac-screen-quicktime/).
